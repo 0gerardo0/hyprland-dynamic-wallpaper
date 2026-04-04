@@ -6,7 +6,7 @@
 # Compatible con la nueva sintaxis Hyprlang de hyprpaper v0.8+
 # Genera el config al vuelo y carga instantaneamente.
 
-DIR="$HOME/.local/share/backgrounds/desert-timed"
+DIR="$HOME/.local/share/backgrounds/big-sur-beach-timed"
 TMP_CONF="/tmp/hyprpaper_dynamic.conf"
 
 # Verificacion inicial
