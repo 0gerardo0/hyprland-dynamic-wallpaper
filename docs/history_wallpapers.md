@@ -1,38 +1,80 @@
-# Deprecated Wallpapers Script
+# Script Histórico: Wallpapers Dinámicos (v1)
 
-This version of the `wallpapers.sh` script is deprecated. It suffered from IPC breakage introduced in `hyprpaper` v0.8.3 (due to the new IPC block config) and was computationally heavy on startup because it used `find` to recursively scan directories, resulting in significant CPU overhead.
+Este es el script original que creaste. Tenía una lógica matemática excelente para calcular la fracción del día y sincronizar las imágenes. 
+
+Fue reemplazado porque utilizaba `find` y `sort` en el arranque (lo que consumía mucha CPU y retrasaba la carga) y porque dependía de la comunicación IPC (`hyprctl`) que se rompió en Hyprland/hyprpaper v0.8.3 al cambiar la sintaxis.
 
 ```bash
-#!/usr/bin/env bash
+#!/bin/bash
 
-# Legacy wallpapers.sh using find and hyprctl IPC
+# Configuracion
+DIR="$HOME/.local/share/backgrounds/parasite-wallpaper"
+DAY_SECONDS=86400
 
-WALLPAPER_DIR="$HOME/Pictures/Wallpapers"
-
-# Find all wallpapers, computationally heavy on startup
-# This scans the entire directory tree every time the script runs
-WALLPAPERS=($(find "$WALLPAPER_DIR" -type f \( -iname \*.jpg -o -iname \*.png -o -iname \*.jpeg -o -iname \*.webp \)))
-
-if [ ${#WALLPAPERS[@]} -eq 0 ]; then
-    echo "No wallpapers found."
+# Verificacion inicial
+if [ ! -d "$DIR" ]; then
+    echo "Error: Directorio no encontrado."
     exit 1
 fi
 
-# Select a random wallpaper
-RANDOM_INDEX=$((RANDOM % ${#WALLPAPERS[@]}))
-SELECTED_WALLPAPER="${WALLPAPERS[$RANDOM_INDEX]}"
+# Cargar imagenes en array
+mapfile -t IMAGES < <(find "$DIR" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \) | sort -V)
+COUNT=${#IMAGES[@]}
 
-# Preload the wallpaper via hyprctl (broken in hyprpaper v0.8.3 if IPC is blocked in hyprpaper.conf)
-hyprctl hyprpaper preload "$SELECTED_WALLPAPER"
+if [ "$COUNT" -eq 0 ]; then
+    exit 1
+fi
 
-# Get active monitors
-MONITORS=$(hyprctl monitors -j | jq -r '.[].name')
+# Calculo de intervalo (entero) una sola vez
+# Cuantos segundos dura cada imagen
+INTERVAL=$((DAY_SECONDS / COUNT))
 
-# Set the wallpaper for each monitor
-for MONITOR in $MONITORS; do
-    hyprctl hyprpaper wallpaper "$MONITOR,$SELECTED_WALLPAPER"
+# Si hay mas imagenes que segundos, forzar 1s
+if [ "$INTERVAL" -eq 0 ]; then INTERVAL=1; fi
+
+CURRENT_WALLPAPER=""
+
+while true; do
+    # Obtener segundos actuales del sistema (Epoch)
+    NOW=$(printf '%(%s)T' -1)
+    
+    # Obtener segundos de la medianoche de hoy
+    # Truco de bash puro para evitar llamar a 'date' externo constantemente si tienes bash 4.2+
+    # Pero para asegurar compatibilidad y precision de zona horaria, usamos date una vez
+    MIDNIGHT=$(date -d "today 00:00:00" +%s)
+    
+    # Segundos transcurridos hoy
+    PASSED=$((NOW - MIDNIGHT))
+    
+    # Calcular indice actual (Matematica nativa de bash)
+    INDEX=$((PASSED / INTERVAL))
+    
+    # Correccion de limites
+    if [ "$INDEX" -ge "$COUNT" ]; then INDEX=$((COUNT - 1)); fi
+    
+    TARGET_IMG="${IMAGES[$INDEX]}"
+    
+    # Aplicar cambio solo si es necesario
+    if [ "$TARGET_IMG" != "$CURRENT_WALLPAPER" ]; then
+        hyprctl hyprpaper preload "$TARGET_IMG" > /dev/null 2>&1
+        hyprctl hyprpaper wallpaper ",$TARGET_IMG" > /dev/null 2>&1
+        
+        # Limpieza
+        if [ -n "$CURRENT_WALLPAPER" ]; then
+             hyprctl hyprpaper unload "$CURRENT_WALLPAPER" > /dev/null 2>&1
+        fi
+        CURRENT_WALLPAPER="$TARGET_IMG"
+    fi
+    
+    # Calcular tiempo para dormir hasta el siguiente cambio exacto
+    # Siguiente segundo clave
+    NEXT_SWITCH=$(( (INDEX + 1) * INTERVAL ))
+    # Cuanto falta
+    SLEEP_TIME=$(( NEXT_SWITCH - PASSED ))
+    
+    # Proteccion contra dormir 0 o negativo
+    if [ "$SLEEP_TIME" -le 0 ]; then SLEEP_TIME=1; fi
+    
+    sleep "$SLEEP_TIME"
 done
-
-# Unload unused wallpapers to free memory
-hyprctl hyprpaper unload all
 ```
