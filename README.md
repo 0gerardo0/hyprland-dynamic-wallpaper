@@ -11,24 +11,35 @@ Este script sincroniza un conjunto de imágenes en un directorio para cambiar a 
 ### Optimización en RAM (`tmpfs`) y Prevención de Desgaste SSD
 El script genera dinámicamente el archivo de configuración temporal para `hyprpaper` en la ruta `/tmp/hyprpaper_dynamic.conf`. Dado que en la mayoría de las distribuciones Linux `/tmp` está montado bajo **`tmpfs`** (es decir, en la memoria RAM), el archivo se crea y sobreescribe sin tocar el almacenamiento persistente. Al escribir la configuración en RAM en lugar de en el disco duro, **evitamos realizar cientos de escrituras innecesarias en tu SSD (SSD wear and tear)**, lo cual prolonga significativamente la vida útil de la unidad.
 
-### Compatibilidad con sintaxis de `hyprpaper` v0.8+
-En versiones recientes de `hyprpaper` (v0.8.3 y superiores), los métodos tradicionales mediante IPC suelen presentar problemas o encontrarse bloqueados por defecto por políticas de seguridad (`ipc = off`). Este script realiza un bypass de estas limitaciones generando directamente un archivo que sigue la nueva sintaxis:
+### Compatibilidad con sintaxis de `hyprpaper` v0.8+ y Multi-monitor
+En versiones recientes de `hyprpaper` (v0.8.3 y superiores), los métodos tradicionales mediante IPC suelen presentar problemas o encontrarse bloqueados por defecto por políticas de seguridad (`ipc = off`). Este script realiza un bypass de estas limitaciones generando directamente un archivo que sigue la nueva sintaxis y detecta dinámicamente todos los monitores activos:
 
 ```hyprlang
+ipc = off
+splash = false
+
 wallpaper {
-    monitor = 
+    monitor = eDP-1
     path = /ruta/a/la/imagen.png
     fit_mode = cover
 }
 ```
 
+El script consulta los monitores activos mediante `hyprctl monitors -j` (usando `jq`), asignando cada pantalla para evitar el error recurrente *"Monitor has no target"*.
+
 El script finaliza limpiamente la instancia anterior (`pkill`) y recarga la nueva apuntando al archivo temporal en `/tmp`. Gracias a que pre-carga los arrays de forma nativa en Bash, evita utilizar subcomandos pesados como `find` cada vez que se ejecuta, garantizando una visualización casi instantánea. Entre cada transición de fondo, el script calcula los segundos exactos restantes y entra en estado de reposo ligero con `sleep`, resultando en un uso de CPU prácticamente nulo (0%).
+
+## Requisitos
+
+- `hyprpaper` (v0.8+)
+- `hyprctl` (incluido con Hyprland)
+- `jq` (para detección dinámica de monitores)
 
 ## Instalación y Uso
 
 1. Clona este repositorio en tu sistema:
    ```bash
-   git clone https://github.com/tu-usuario/hyprland-dynamic-wallpaper.git
+   git clone https://github.com/0gerardo0/hyprland-dynamic-wallpaper.git
    cd hyprland-dynamic-wallpaper
    ```
 
@@ -37,11 +48,16 @@ El script finaliza limpiamente la instancia anterior (`pkill`) y recarga la nuev
    chmod +x wallpapers.sh
    ```
 
-3. **(Importante):** Edita la variable `DIR` dentro de `wallpapers.sh` para que apunte al directorio donde guardas tu secuencia de imágenes dinámicas. Por defecto asume `$HOME/.local/share/backgrounds/parasite-wallpaper`.
+3. **Ejecución manual o personalizada:**
+   Puedes pasar la ruta del directorio de imágenes directamente como argumento:
+   ```bash
+   ./wallpapers.sh /ruta/a/tus/wallpapers
+   ```
+   *(Si no se especifica ruta, usará por defecto `$HOME/.local/share/backgrounds/desert-sands` o la ruta que definas en el script).*
 
 4. Agrégalo al autostart dentro de la configuración de Hyprland (`~/.config/hypr/hyprland.conf`):
    ```hyprlang
-   exec-once = /ruta/absoluta/a/hyprland-dynamic-wallpaper/wallpapers.sh
+   exec-once = /ruta/absoluta/a/hyprland-dynamic-wallpaper/wallpapers.sh /ruta/a/tus/wallpapers
    ```
 
 ## Roadmap
